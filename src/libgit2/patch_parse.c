@@ -466,7 +466,7 @@ static int parse_header_pathnames_heuristically(
 	 new one begins.
 	 */
 	if (ctx->parse_ctx.line[0] == '"') {
-		
+
 		/* Parse the quoted OLD path. */
 		if (parse_header_path(out_old_path, ctx) < 0)
 			return git_parse_err("corrupt old path in git diff header at line %"PRIuZ,
@@ -501,14 +501,14 @@ static int parse_header_pathnames_heuristically(
 			/* The NEW path is quoted.
 			 That gives us an unambiguous split point, which is just before
 			 the opening '"' of the NEW path. */
-			
+
 			if (ctx->parse_ctx.line[dquote_offset - 1] != ' ' &&
 				ctx->parse_ctx.line[dquote_offset - 1] != '\t')
 			{
 				return git_parse_err("missing expected separator space in git diff header at line %"PRIuZ,
 					ctx->parse_ctx.line_num);
 			}
-			
+
 			/* The OLD path must then be everything up to that double-quote
 			 minus the preceding space. */
 			if (parse_header_path_up_to_len(out_old_path, ctx, dquote_offset - 1) < 0)
@@ -516,7 +516,7 @@ static int parse_header_pathnames_heuristically(
 					ctx->parse_ctx.line_num);
 
 			git_parse_advance_ws(&ctx->parse_ctx);
-			
+
 			/* Parse the double-quoted NEW path. */
 			if (parse_header_path(out_new_path, ctx) < 0)
 				return git_parse_err("corrupt new path in git diff header at line %"PRIuZ,
@@ -536,7 +536,7 @@ static int parse_header_pathnames_heuristically(
 				ctx);
 		}
 	}
-	
+
 	return 0;
 }
 
@@ -573,7 +573,7 @@ static int parse_header_start(git_patch_parsed *patch, git_patch_parse_ctx *ctx)
 		/*
 		 That first try hasn't consumed the whole line, so what we parsed can't
 		 possibly be the correct pathnames.
-		 
+
 		 We can't give up just yet and hope for the "---" and "+++" lines that
 		 should be coming after the header to fix everything though. This will
 		 not always be possible.
@@ -1151,11 +1151,11 @@ static int parse_patch_advance_path_prefix(
 	git_patch_parse_ctx *ctx)
 {
 	size_t prefix_len;
-	
+
 	int err = check_prefix_len(&prefix_len, patch, ctx->parse_ctx.line);
 	if (err < 0)
 		return err;
-	
+
 	git_parse_advance_chars(&ctx->parse_ctx, prefix_len);
 	return 0;
 }
@@ -1166,7 +1166,7 @@ static int parse_patch_binary_nodata(
 {
 	const char *old = patch->old_path ? patch->old_path : patch->header_old_path;
 	const char *new = patch->new_path ? patch->new_path : patch->header_new_path;
-	
+
 	bool old_is_prefixed = true;
 	bool new_is_prefixed = true;
 
@@ -1174,7 +1174,7 @@ static int parse_patch_binary_nodata(
 		old = patch->rename_old_path;
 		old_is_prefixed = false;
 	}
-	
+
 	if (new == NULL && patch->rename_new_path != NULL) {
 		new = patch->rename_new_path;
 		new_is_prefixed = false;
@@ -1265,7 +1265,7 @@ static int check_prefix_len(
 	const char *path_start)
 {
 	const char *after_prefix;
-	
+
 	const char *path = path_start;
 	size_t prefix_len = patch->ctx->opts.prefix_len;
 	size_t remain_len = prefix_len;
@@ -1306,14 +1306,14 @@ static int check_prefix(
 	const char *path_start)
 {
 	size_t prefix_len;
-	
+
 	int res = check_prefix_len(&prefix_len, patch, path_start);
-	
+
 	if (res >= 0) {
 		*out_len = prefix_len;
 		*out = git__strndup(path_start, prefix_len);
 	}
-	
+
 	return res;
 }
 
@@ -1570,4 +1570,3 @@ int git_patch_from_buffer(
 	git_patch_parse_ctx_free(ctx);
 	return error;
 }
-
