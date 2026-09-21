@@ -6,6 +6,26 @@
  */
 
 #include "runtime.h"
+#include "custom_tls.h"
+
+static int validate_custom_tls_callbacks(
+	git_retrieve_tls_for_internal_thread_cb retrieve_storage_for_internal_thread,
+	git_set_tls_on_internal_thread_cb set_storage_on_thread,
+	git_teardown_tls_on_internal_thread_cb teardown_storage_on_thread)
+{
+	bool has_retrieve = (retrieve_storage_for_internal_thread != NULL);
+	bool has_set = (set_storage_on_thread != NULL);
+	bool has_teardown = (teardown_storage_on_thread != NULL);
+
+	if ((has_retrieve == has_set) && (has_set == has_teardown))
+		return 0;
+
+	git_error_set(
+		GIT_ERROR_INVALID,
+		"custom thread local storage callbacks must either all be set or all be NULL");
+	return -1;
+}
+
 
 #ifdef GIT_THREADS
 
@@ -53,12 +73,11 @@ int git_custom_tls_set_callbacks(
 	git_set_tls_on_internal_thread_cb set_storage_on_thread,
 	git_teardown_tls_on_internal_thread_cb teardown_storage_on_thread)
 {
-  /* We want to ensure that all callbacks are set or not set in totality.
-   * It does not make sense to have a subset of callbacks set.
-   */
-	assert((retrieve_storage_for_internal_thread && set_storage_on_thread &&
-		teardown_storage_on_thread) || !(retrieve_storage_for_internal_thread &&
-		set_storage_on_thread && teardown_storage_on_thread));
+	if (validate_custom_tls_callbacks(
+			retrieve_storage_for_internal_thread,
+			set_storage_on_thread,
+			teardown_storage_on_thread) < 0)
+		return -1;
 
 	if (git_rwlock_wrlock(&git__custom_tls.lock) < 0) {
 		git_error_set(GIT_ERROR_OS, "failed to lock custom thread local storage");
@@ -78,30 +97,32 @@ int git_custom_tls_set_callbacks(
 
 int git_custom_tls__init(git_custom_tls *tls)
 {
-  if (git_rwlock_rdlock(&git__custom_tls.lock) < 0) {
-    git_error_set(GIT_ERROR_OS, "failed to lock custom thread local storage");
-    return -1;
-  }
+	if (git_rwlock_rdlock(&git__custom_tls.lock) < 0) {
+		git_error_set(GIT_ERROR_OS, "failed to lock custom thread local storage");
+		return -1;
+	}
 
-  /* We try to ensure that all 3 callbacks must be set or not set.
-   * It would not make sense to have a subset of the callbacks set.
-   */
-  if (!git__custom_tls.retrieve_storage_for_internal_thread) {
-    tls->set_storage_on_thread = NULL;
-    tls->teardown_storage_on_thread = NULL;
-    tls->payload = NULL;
-  } else {
-    /* We set these on a struct so that if for whatever reason the opts are changed
-     * at least the opts will remain consistent for any given thread already in
-     * motion.
-     */
-    tls->set_storage_on_thread = git__custom_tls.set_storage_on_thread;
-    tls->teardown_storage_on_thread = git__custom_tls.teardown_storage_on_thread;
-    tls->payload = git__custom_tls.retrieve_storage_for_internal_thread();
-  }
+	if (validate_custom_tls_callbacks(
+			git__custom_tls.retrieve_storage_for_internal_thread,
+			git__custom_tls.set_storage_on_thread,
+			git__custom_tls.teardown_storage_on_thread) < 0) {
+		git_rwlock_rdunlock(&git__custom_tls.lock);
+		return -1;
+	}
 
-  git_rwlock_rdunlock(&git__custom_tls.lock);
-  return 0;
+	if (!git__custom_tls.retrieve_storage_for_internal_thread) {
+		tls->set_storage_on_thread = NULL;
+		tls->teardown_storage_on_thread = NULL;
+		tls->payload = NULL;
+	} else {
+		/* Keep a per-thread snapshot of the callbacks in use. */
+		tls->set_storage_on_thread = git__custom_tls.set_storage_on_thread;
+		tls->teardown_storage_on_thread = git__custom_tls.teardown_storage_on_thread;
+		tls->payload = git__custom_tls.retrieve_storage_for_internal_thread();
+	}
+
+	git_rwlock_rdunlock(&git__custom_tls.lock);
+	return 0;
 }
 
 #else
@@ -116,6 +137,12 @@ int git_custom_tls_set_callbacks(
 	git_set_tls_on_internal_thread_cb set_storage_on_thread,
 	git_teardown_tls_on_internal_thread_cb teardown_storage_on_thread)
 {
+	if (validate_custom_tls_callbacks(
+			retrieve_storage_for_internal_thread,
+			set_storage_on_thread,
+			teardown_storage_on_thread) < 0)
+		return -1;
+
 	return 0;
 }
 

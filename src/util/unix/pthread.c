@@ -5,6 +5,10 @@
  * a Linking Exception. For full terms see the included COPYING file.
  */
 
+#include "git2_util.h"
+
+#ifdef GIT_THREADS
+
 #include "pthread.h"
 #include "thread.h"
 #include "runtime.h"
@@ -71,3 +75,5 @@ void git_thread_exit(void *value)
 
   return pthread_exit(value);
 }
+
+#endif

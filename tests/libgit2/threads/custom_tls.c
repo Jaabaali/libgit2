@@ -5,13 +5,15 @@
 #include "common.h"
 #include "git2/sys/custom_tls.h"
 
+#ifdef GIT_THREADS
 static int *test[2] = { NULL, NULL };
 static int num_threads_spawned = 0;
+#endif
 
 #if defined(GIT_THREADS) && defined(GIT_WIN32)
 static DWORD _fls_index;
 
-int init_thread_local_storage(void)
+static int init_thread_local_storage(void)
 {
   if ((_fls_index = FlsAlloc(NULL)) == FLS_OUT_OF_INDEXES)
     return -1;
@@ -19,23 +21,23 @@ int init_thread_local_storage(void)
   return 0;
 }
 
-void cleanup_thread_local_storage(void)
+static void cleanup_thread_local_storage(void)
 {
   FlsFree(_fls_index);
 }
 
-void *init_local_storage(void) {
+static void *init_local_storage(void) {
   test[num_threads_spawned] = git__calloc(1, sizeof(int));
   return test[num_threads_spawned++];
 }
 
-void init_tls(void *payload) {
+static void init_tls(void *payload) {
   int *i = payload;
   (*i)++;
   FlsSetValue(_fls_index, i);
 }
 
-void teardown_tls(void) {
+static void teardown_tls(void) {
   int *i = FlsGetValue(_fls_index);
   (*i)++;
 }
@@ -43,28 +45,28 @@ void teardown_tls(void) {
 #elif defined(GIT_THREADS) && defined(_POSIX_THREADS)
 static pthread_key_t _tls_key;
 
-int init_thread_local_storage(void)
+static int init_thread_local_storage(void)
 {
   return pthread_key_create(&_tls_key, NULL);
 }
 
-void cleanup_thread_local_storage(void)
+static void cleanup_thread_local_storage(void)
 {
   pthread_key_delete(_tls_key);
 }
 
-void *init_local_storage(void) {
+static void *init_local_storage(void) {
   test[num_threads_spawned] = git__calloc(1, sizeof(int));
   return test[num_threads_spawned++];
 }
 
-void init_tls(void *payload) {
+static void init_tls(void *payload) {
   int *i = payload;
   (*i)++;
   pthread_setspecific(_tls_key, i);
 }
 
-void teardown_tls(void) {
+static void teardown_tls(void) {
   int *i = pthread_getspecific(_tls_key);
   (*i)++;
 }
@@ -151,5 +153,39 @@ void test_threads_custom_tls__multiple_threads_use_exit(void)
 
   cl_assert_equal_i(2, *(test[0]));
   cl_assert_equal_i(2, *(test[1]));
+#endif
+}
+
+
+#ifdef GIT_THREADS
+
+static void *retrieve_storage(void)
+{
+	return (void *)0x1;
+}
+
+static void set_storage(void *payload)
+{
+	GIT_UNUSED(payload);
+}
+
+static void teardown_storage(void)
+{
+}
+
+#endif
+
+void test_threads_custom_tls__rejects_partial_callback_sets(void)
+{
+#ifndef GIT_THREADS
+	clar__skip();
+#else
+	cl_git_fail(git_custom_tls_set_callbacks(retrieve_storage, NULL, teardown_storage));
+	cl_git_fail(git_custom_tls_set_callbacks(NULL, set_storage, teardown_storage));
+	cl_git_fail(git_custom_tls_set_callbacks(retrieve_storage, set_storage, NULL));
+
+	cl_git_pass(git_custom_tls_set_callbacks(NULL, NULL, NULL));
+	cl_git_pass(git_custom_tls_set_callbacks(retrieve_storage, set_storage, teardown_storage));
+	cl_git_pass(git_custom_tls_set_callbacks(NULL, NULL, NULL));
 #endif
 }

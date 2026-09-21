@@ -21,8 +21,8 @@ GIT_BEGIN_DECL
 typedef void *GIT_CALLBACK(git_retrieve_tls_for_internal_thread_cb)(void);
 
 /**
- * This callback will be called when a thread is exiting so that a user
- * of the library can clean up their thread local storage.
+ * Called in a newly created thread to install the payload retrieved from
+ * its creating thread.
  */
 typedef void GIT_CALLBACK(git_set_tls_on_internal_thread_cb)(void *payload);
 
@@ -36,7 +36,9 @@ typedef void GIT_CALLBACK(git_teardown_tls_on_internal_thread_cb)(void);
  * Sets the callbacks for custom thread local storage used by internally
  * created libgit2 threads. This allows users of the library an opportunity
  * to set thread local storage for internal threads based on the creating
- * thread.
+ * thread. All three callbacks must be supplied together, or all must be NULL
+ * to disable custom thread local storage. A partial set returns an error
+ * without changing the registered callbacks.
  *
  * @param  retrieve_storage_for_internal_thread Used to retrieve a pointer on
  *                                              a thread before spawning child

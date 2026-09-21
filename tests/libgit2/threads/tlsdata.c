@@ -63,3 +63,18 @@ void test_threads_tlsdata__threads(void)
 	cl_git_pass(git_tlsdata_dispose(tlsdata));
 #endif
 }
+
+/* Checkout allocates and releases a key for each operation, including in
+ * builds without threads. Disposed slots must be reusable. */
+void test_threads_tlsdata__reuses_disposed_keys(void)
+{
+	git_tlsdata_key key;
+	size_t i;
+
+	for (i = 0; i < 64; i++) {
+		cl_git_pass(git_tlsdata_init(&key, NULL));
+		cl_git_pass(git_tlsdata_set(key, &key));
+		cl_assert(git_tlsdata_get(key) == &key);
+		cl_git_pass(git_tlsdata_dispose(key));
+	}
+}

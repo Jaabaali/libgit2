@@ -516,7 +516,7 @@ int git_filter_list__load(
 	git_filter_session *filter_session)
 {
 	int error = 0;
-	int i;
+	size_t i;
 	int disabled_filter_found;
 	git_filter_list *fl = NULL;
 	git_filter_source src = { 0 };

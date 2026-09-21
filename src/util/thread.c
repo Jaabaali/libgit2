@@ -12,30 +12,36 @@
 #define TLSDATA_MAX 16
 
 typedef struct {
+	bool used;
 	void *value;
 	void (GIT_SYSTEM_CALL *destroy_fn)(void *);
 } tlsdata_value;
 
 static tlsdata_value tlsdata_values[TLSDATA_MAX];
-static int tlsdata_cnt = 0;
 
 int git_tlsdata_init(git_tlsdata_key *key, void (GIT_SYSTEM_CALL *destroy_fn)(void *))
 {
-	if (tlsdata_cnt >= TLSDATA_MAX)
+	int i;
+
+	for (i = 0; i < TLSDATA_MAX; i++) {
+		if (!tlsdata_values[i].used)
+			break;
+	}
+
+	if (i == TLSDATA_MAX)
 		return -1;
 
-	tlsdata_values[tlsdata_cnt].value = NULL;
-	tlsdata_values[tlsdata_cnt].destroy_fn = destroy_fn;
-
-	*key = tlsdata_cnt;
-	tlsdata_cnt++;
+	tlsdata_values[i].used = true;
+	tlsdata_values[i].value = NULL;
+	tlsdata_values[i].destroy_fn = destroy_fn;
+	*key = i;
 
 	return 0;
 }
 
 int git_tlsdata_set(git_tlsdata_key key, void *value)
 {
-	if (key < 0 || key > tlsdata_cnt)
+	if (key < 0 || key >= TLSDATA_MAX || !tlsdata_values[key].used)
 		return -1;
 
 	tlsdata_values[key].value = value;
@@ -44,7 +50,7 @@ int git_tlsdata_set(git_tlsdata_key key, void *value)
 
 void *git_tlsdata_get(git_tlsdata_key key)
 {
-	if (key < 0 || key > tlsdata_cnt)
+	if (key < 0 || key >= TLSDATA_MAX || !tlsdata_values[key].used)
 		return NULL;
 
 	return tlsdata_values[key].value;
@@ -55,12 +61,13 @@ int git_tlsdata_dispose(git_tlsdata_key key)
 	void *value;
 	void (*destroy_fn)(void *) = NULL;
 
-	if (key < 0 || key > tlsdata_cnt)
+	if (key < 0 || key >= TLSDATA_MAX || !tlsdata_values[key].used)
 		return -1;
 
 	value = tlsdata_values[key].value;
 	destroy_fn = tlsdata_values[key].destroy_fn;
 
+	tlsdata_values[key].used = false;
 	tlsdata_values[key].value = NULL;
 	tlsdata_values[key].destroy_fn = NULL;
 

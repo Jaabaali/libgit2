@@ -76,6 +76,7 @@ typedef struct {
 	git_vector *update_reuc;
 	git_vector *update_names;
 	git_tlsdata_key buffers;
+	bool buffers_initialized;
 	unsigned int strategy;
 	int can_symlink;
 	int respect_filemode;
@@ -2004,36 +2005,68 @@ typedef struct {
 	git_vector *progress_pairs;
 } thread_params;
 
+static void GIT_SYSTEM_CALL dispose_checkout_buffers(void *_buffers);
+
+static void checkout_create_the_new__signal_error(
+	thread_params *worker,
+	int error)
+{
+	git_atomic32_set(worker->error, error);
+
+	git_mutex_lock(worker->mutex);
+	git_cond_signal(worker->cond);
+	git_mutex_unlock(worker->mutex);
+}
+
 static void *checkout_create_the_new__thread(void *arg)
 {
 	thread_params *worker = arg;
 	size_t i;
-	checkout_buffers *buffers = git__malloc(sizeof(checkout_buffers));
+	checkout_buffers *buffers = git__calloc(1, sizeof(checkout_buffers));
+	checkout_progress_pair *progress_pair = NULL;
+	int error = 0;
+	bool buffers_registered = false;
 
-	/* TODO if the thread fails to allocate, signal and have the parent thread check the return value */
 	/* TODO deduplicate this setup with checkout_data_init */
-	git_str_init(&buffers->target_path, 0);
-	git_str_init(&buffers->tmp, 0);
-	git_tlsdata_set(worker->cd->buffers, buffers);
-	git_str_puts(&buffers->target_path, worker->cd->opts.target_directory);
-	git_fs_path_to_dir(&buffers->target_path);
+	if (buffers == NULL) {
+		checkout_create_the_new__signal_error(worker, -1);
+		return NULL;
+	}
+
+	if ((error = git_str_init(&buffers->target_path, 0)) < 0 ||
+		(error = git_str_init(&buffers->tmp, 0)) < 0 ||
+		(error = git_tlsdata_set(worker->cd->buffers, buffers)) < 0)
+		goto fail;
+
+	/* Once registered, the thread-local destructor owns these buffers. */
+	buffers_registered = true;
+	if ((error = git_str_puts(&buffers->target_path, worker->cd->opts.target_directory)) < 0 ||
+		(error = git_fs_path_to_dir(&buffers->target_path)) < 0)
+		goto fail;
+
 	buffers->target_len = git_str_len(&buffers->target_path);
 
 	while ((i = git_atomic32_add(worker->delta_index, 1)) <
 			git_vector_length(&worker->cd->diff->deltas)) {
-		checkout_progress_pair *progress_pair;
 		git_diff_delta *delta = git_vector_get(&worker->cd->diff->deltas, i);
 
-		if (delta == NULL || git_atomic32_get(worker->error) != 0)
+		if (git_atomic32_get(worker->error) != 0)
 			return NULL;
+
+		if (delta == NULL) {
+			git_error_set(GIT_ERROR_CHECKOUT, "missing diff delta for checkout worker");
+			error = -1;
+			goto fail;
+		}
 
 		progress_pair = (checkout_progress_pair *)git__malloc(
 			sizeof(checkout_progress_pair));
 		if (progress_pair == NULL) {
-			git_atomic32_set(worker->error, -1);
-			git_cond_signal(worker->cond);
-			return NULL;
+			error = -1;
+			goto fail;
 		}
+
+		progress_pair->index = i;
 
 		/* We skip symlink operations, because we handle them
 		 * in the main thread to avoid a symlink security flaw.
@@ -2044,21 +2077,33 @@ static void *checkout_create_the_new__thread(void *arg)
 			 * the case where might encounter a file locking error due to
 			 * multithreading and name collisions.
 			 */
-			progress_pair->index = i;
 			progress_pair->error = checkout_blob(worker->cd, &delta->new_file);
 			progress_pair->skipped = false;
 		} else {
-			progress_pair->index = i;
 			progress_pair->error = 0;
 			progress_pair->skipped = true;
 		}
 
 		git_mutex_lock(worker->mutex);
-		git_vector_insert(worker->progress_pairs, progress_pair);
+		error = git_vector_insert(worker->progress_pairs, progress_pair);
 		git_cond_signal(worker->cond);
 		git_mutex_unlock(worker->mutex);
+
+		if (error < 0)
+			goto fail;
+
+		progress_pair = NULL;
 	}
 
+	return NULL;
+
+fail:
+	git__free(progress_pair);
+
+	if (!buffers_registered)
+		dispose_checkout_buffers(buffers);
+
+	checkout_create_the_new__signal_error(worker, error ? error : -1);
 	return NULL;
 }
 
@@ -2138,7 +2183,7 @@ static int checkout_create_the_new__parallel(
 		for (; last_index < current_index; ++last_index) {
 			progress_pair = git_vector_get(&progress_pairs,
 				last_index);
-			delta = git_vector_get(&data->diff->deltas, last_index);
+			delta = git_vector_get(&data->diff->deltas, progress_pair->index);
 
 			if (progress_pair->skipped)
 				continue;
@@ -2665,10 +2710,11 @@ static void checkout_data_clear(checkout_data *data)
 	git__free(data->pfx);
 	data->pfx = NULL;
 
-	if (data->buffers) {
+	if (data->buffers_initialized) {
 		dispose_checkout_buffers(git_tlsdata_get(data->buffers));
 		git_tlsdata_set(data->buffers, NULL);
 		git_tlsdata_dispose(data->buffers);
+		data->buffers_initialized = false;
 	}
 
 	git_index_free(data->index);
@@ -2884,7 +2930,9 @@ static int checkout_data_init(
 	if ((error = git_tlsdata_init(&data->buffers, dispose_checkout_buffers)) < 0)
 		goto cleanup;
 
-	if ((buffers = git__malloc(sizeof(checkout_buffers))) == NULL) {
+	data->buffers_initialized = true;
+
+	if ((buffers = git__calloc(1, sizeof(checkout_buffers))) == NULL) {
 		error = -1;
 		goto cleanup;
 	}
@@ -2906,7 +2954,7 @@ static int checkout_data_init(
 
 cleanup:
 	if (error < 0) {
-		if (data->buffers && buffers && git_tlsdata_get(data->buffers) == NULL)
+		if (data->buffers_initialized && buffers && git_tlsdata_get(data->buffers) == NULL)
 			dispose_checkout_buffers(buffers);
 
 		checkout_data_clear(data);

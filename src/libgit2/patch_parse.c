@@ -433,6 +433,16 @@ static int parse_header_unquoted_pathnames_guessing_split_point(
 				{
 					*out_old_path = git__strndup(old_path_base, old_path_len);
 					*out_new_path = git__strndup(new_path_base, new_path_len);
+
+					if (!*out_old_path || !*out_new_path) {
+						git__free(*out_old_path);
+						git__free(*out_new_path);
+						*out_old_path = NULL;
+						*out_new_path = NULL;
+						git__free(both_paths);
+						return -1;
+					}
+
 					did_parse_paths = true;
 					stop_path_matching_loop = true;
 				}

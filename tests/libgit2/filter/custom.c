@@ -266,3 +266,44 @@ void test_filter_custom__erroneous_filter_fails(void)
 	git_filter_list_free(filters);
 	git_buf_dispose(&out);
 }
+
+void test_filter_custom__checkout_disables_only_named_filters(void)
+{
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_index *index;
+	git_index_entry entry = {{0}};
+	git_str content = GIT_STR_INIT;
+	char *disabled[] = { "reverse", "bitflip" };
+	const unsigned char flipped[] = { 0x9e, 0x9d, 0x9c, 0x9b };
+	const unsigned char reversed[] = { 0x9b, 0x9c, 0x9d, 0x9e };
+
+	entry.path = "hero.bin";
+	entry.mode = GIT_FILEMODE_BLOB;
+	cl_git_pass(git_blob_create_from_buffer(&entry.id, g_repo, "abcd", 4));
+	cl_git_pass(git_repository_index(&index, g_repo));
+	cl_git_pass(git_index_add(index, &entry));
+
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+	opts.disabled_filters.strings = disabled;
+	opts.disabled_filters.count = 1;
+	cl_git_pass(git_checkout_index(g_repo, index, &opts));
+	cl_git_pass(git_futils_readbuffer(&content, "empty_standard_repo/hero.bin"));
+	cl_assert_equal_sz(4, content.size);
+	cl_assert_equal_i(0, memcmp(content.ptr, flipped, 4));
+
+	cl_git_pass(p_unlink("empty_standard_repo/hero.bin"));
+	opts.disabled_filters.count = 2;
+	cl_git_pass(git_checkout_index(g_repo, index, &opts));
+	cl_git_pass(git_futils_readbuffer(&content, "empty_standard_repo/hero.bin"));
+	cl_assert_equal_s("abcd", content.ptr);
+
+	cl_git_pass(p_unlink("empty_standard_repo/hero.bin"));
+	opts.disabled_filters.count = 0;
+	cl_git_pass(git_checkout_index(g_repo, index, &opts));
+	cl_git_pass(git_futils_readbuffer(&content, "empty_standard_repo/hero.bin"));
+	cl_assert_equal_sz(4, content.size);
+	cl_assert_equal_i(0, memcmp(content.ptr, reversed, 4));
+
+	git_str_dispose(&content);
+	git_index_free(index);
+}
