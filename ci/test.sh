@@ -301,11 +301,15 @@ if should_run "ONLINE_TESTS"; then
 
 	export GITTEST_REMOTE_REDIRECT_INITIAL="http://localhost:9000/initial-redirect:none/libgit2/TestGitRepository"
 	export GITTEST_REMOTE_REDIRECT_SUBSEQUENT="http://localhost:9000/subsequent-redirect/libgit2/TestGitRepository"
+	export GITTEST_REMOTE_REDIRECT_AUTHENTICATION="http://localhost:9000/initial-redirect/libgit2/private-repository"
+	export GITTEST_REMOTE_REDIRECT_TARGET="https://github.com/libgit2/private-repository"
 	export GITTEST_REMOTE_SPEED_SLOW="http://localhost:9000/speed:9600/test.git"
 	export GITTEST_REMOTE_SPEED_TIMESOUT="http://localhost:9000/speed:0.5/test.git"
 	run_test online
 	unset GITTEST_REMOTE_REDIRECT_INITIAL
 	unset GITTEST_REMOTE_REDIRECT_SUBSEQUENT
+	unset GITTEST_REMOTE_REDIRECT_AUTHENTICATION
+	unset GITTEST_REMOTE_REDIRECT_TARGET
 	unset GITTEST_REMOTE_SPEED_SLOW
 	unset GITTEST_REMOTE_SPEED_TIMESOUT
 

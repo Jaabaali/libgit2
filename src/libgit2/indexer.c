@@ -24,9 +24,10 @@
 #include "object.h"
 #include "hashmap_oid.h"
 
-size_t git_indexer__max_objects = UINT32_MAX;
-
 #define UINT31_MAX (0x7FFFFFFF)
+
+size_t git_indexer__max_objects = UINT32_MAX;
+size_t git_indexer__max_object_size = UINT31_MAX;
 
 GIT_HASHMAP_OID_SETUP(git_indexer_oidmap, git_oid *);
 

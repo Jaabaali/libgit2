@@ -13,6 +13,8 @@
 #define RABIN_SHIFT 23
 #define RABIN_WINDOW 16
 
+extern size_t git_indexer__max_object_size;
+
 static const unsigned int T[256] = {
 	0x00000000, 0xab59b4d1, 0x56b369a2, 0xfdeadd73, 0x063f6795, 0xad66d344,
 	0x508c0e37, 0xfbd5bae6, 0x0c7ecf2a, 0xa7277bfb, 0x5acda688, 0xf1941259,
@@ -562,6 +564,12 @@ int git_delta_apply(
 
 	if (hdr_sz(&res_sz, &delta, delta_end) < 0) {
 		git_error_set(GIT_ERROR_INVALID, "failed to apply delta: base size does not match given data");
+		return -1;
+	}
+
+	if (res_sz > git_indexer__max_object_size) {
+		git_error_set(GIT_ERROR_INVALID,
+			"failed to apply delta: overly large object");
 		return -1;
 	}
 

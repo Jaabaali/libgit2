@@ -236,7 +236,8 @@ static int set_data(
 	    len > (size_t)((caps - line) + 1)) {
 		caps++;
 
-		if (strncmp(caps, "object-format=", CONST_STRLEN("object-format=")) == 0)
+		if (len - (caps - line) >= CONST_STRLEN("object-format=") &&
+		    strncmp(caps, "object-format=", CONST_STRLEN("object-format=")) == 0)
 			format_str = caps + CONST_STRLEN("object-format=");
 		else if ((format_str = git__memmem(caps, len - (caps - line), " object-format=", CONST_STRLEN(" object-format="))) != NULL)
 			format_str += CONST_STRLEN(" object-format=");

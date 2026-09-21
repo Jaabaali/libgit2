@@ -1,3 +1,88 @@
+v1.9.7
+------
+
+This is an security release with one change.
+
+* Escape remote repository paths in libssh2
+
+  In v1.9.2, we started escaping repository paths in the OpenSSH-based
+  exec ssh transport. Bring the same escaping to the libssh2 transport
+  to avoid any potential command injection.
+
+In addition, changes have been ported from the main branch to update
+CI builds.
+
+v1.9.6
+------
+
+This release includes a few small but important bugfixes.
+
+* load_known_hosts: do not fail if homedir is invalid
+  by @JonasVautherin in https://github.com/libgit2/libgit2/pull/7056
+* Fix segfault on Android when no HOME set by @501st-alpha1 in
+  https://github.com/libgit2/libgit2/pull/7309
+* cmake: bring back hidden visibility for the static build by
+  @carlosmn in https://github.com/libgit2/libgit2/pull/7288
+
+v1.9.5
+------
+
+This is a security release with multiple changes.
+
+* Fix for blame error handling on hunk creation failures
+
+  `hunk_from_entry` can return `NULL` on error; handle that and
+  return an error.
+
+* Fix for potential PCRE memory access: 1-byte heap-buffer-overflow
+  WRITE in bundled PCRE 8.45 reachable via revspec
+
+  `git_revparse_single` accepts revspecs of the form `:/<pattern>`
+  (the "grep by commit message" shorthand) and forwards `<pattern>`
+  directly to libgit2's regex backend. When libgit2 is using its builtin
+  regular expression engine, this causes a heap buffer overflow.
+
+* Fix for CVE-2026-53586: give auth callback current host
+
+  libgit2's builtin HTTP transport follows offsite redirects for the 
+  initial smart HTTP request by default. If the redirected server then 
+  returns 401 Unauthorized, libgit2 asks the application credential 
+  callback for credentials using the original remote URL, not the 
+  redirected URL. The returned credential is then attached to the next 
+  request to the redirected host as an Authorization header.
+
+* Fix for CVE-2026-53587: libgit2 version 1.9.4 and below is vulnerable
+  to a heap out-of-bounds read in `set_data` in
+  `src/libgit2/transports/smart_pkt.c`.
+
+  When given capabilities, we check for the object-format capability; we
+  need to ensure that the current packet buffer is large enough before
+  actually doing the check.
+
+* Fix for CVE-2026-53585: Unbounded Memory Allocation via Delta
+  Object Result-Size Header
+
+  Potential denial of service because `git_delta_apply` reads the
+  claimed result size (`res_sz`) from the delta object header — data 
+  entirely controlled by the sender — and immediately allocates a
+  buffer of that size.
+
+* Fix for CVE-2026-53584: submodule: check paths for escaping
+
+  A crafted repository with a submodule whose path contains traversal 
+  components (e.g. "../") can cause the library to create directories 
+  outside the repository's working tree.
+
+* Fix for CVE-2026-53583: inverted IP SubjectAltName comparison in
+  OpenSSL backend.
+
+  An inverted comparison in the OpenSSL TLS backend causes IP 
+  SubjectAltName (SAN) verification to accept certificates with
+  mismatched IP addresses and reject certificates with correct IP 
+  addresses. This allows a network attacker with a valid CA-signed 
+  certificate containing any IP SAN to perform MITM attacks against 
+  libgit2 clients connecting to IP-literal HTTPS URLs.
+
 v1.9.4
 ------
 
