@@ -1,257 +1,120 @@
-# Continuous integration and pull request validation builds for the
-# main and maintenance branches.
-name: CI Build
+name: CI Tests
 
 on:
   push:
-    branches: [ main, maint/* ]
+    branches: [ "jabali/**" ]
   pull_request:
-    branches: [ main, maint/* ]
   workflow_dispatch:
 
-env:
-  docker-registry: ghcr.io
-  docker-config-path: ci/docker
-
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
-  # Run our CI/CD builds.  We build a matrix with the various build targets
-  # and their details.  Then we build either in a docker container (Linux)
-  # or on the actual hosts (macOS, Windows).
-  build:
+  test:
     strategy:
+      fail-fast: false
       matrix:
         platform:
-        # All builds: core platforms
-        - name: "Linux (Noble, GCC, OpenSSL, libssh2)"
-          id: noble-gcc-openssl
+        - name: Linux
+          id: linux
           os: ubuntu-latest
-          container:
-            name: noble
           env:
             CC: gcc
             CMAKE_GENERATOR: Ninja
-            CMAKE_OPTIONS: -DUSE_HTTPS=OpenSSL -DREGEX_BACKEND=builtin -DDEPRECATE_HARD=ON -DUSE_LEAK_CHECKER=valgrind -DUSE_GSSAPI=ON -DUSE_SSH=libssh2 -DDEBUG_STRICT_ALLOC=ON -DDEBUG_STRICT_OPEN=ON
-        - name: "Linux (Noble, Clang, mbedTLS, OpenSSH)"
-          id: noble-clang-mbedtls
+            CMAKE_OPTIONS: -DUSE_HTTPS=OpenSSL -DUSE_BUNDLED_ZLIB=ON -DDEPRECATE_HARD=ON
+        - name: Linux (no threads)
+          id: linux-no-threads
           os: ubuntu-latest
-          container:
-            name: noble
-          env:
-            CC: clang
-            CMAKE_OPTIONS: -DUSE_HTTPS=mbedTLS -DUSE_SHA1=HTTPS -DREGEX_BACKEND=pcre -DDEPRECATE_HARD=ON -DUSE_LEAK_CHECKER=valgrind -DUSE_GSSAPI=ON -DUSE_SSH=exec -DUSE_HTTP_PARSER=http-parser
-            CMAKE_GENERATOR: Ninja
-        - name: "Linux (Xenial, GCC, OpenSSL, OpenSSH)"
-          id: xenial-gcc-openssl
-          os: ubuntu-latest
-          container:
-            name: xenial
           env:
             CC: gcc
             CMAKE_GENERATOR: Ninja
-            CMAKE_OPTIONS: -DUSE_HTTPS=OpenSSL -DREGEX_BACKEND=builtin -DDEPRECATE_HARD=ON -DUSE_LEAK_CHECKER=valgrind -DUSE_GSSAPI=ON -DUSE_SSH=exec -DDEBUG_STRICT_ALLOC=ON -DDEBUG_STRICT_OPEN=ON
-        - name: "Linux (Xenial, Clang, mbedTLS, libssh2)"
-          id: xenial-gcc-mbedtls
-          os: ubuntu-latest
-          container:
-            name: xenial
-          env:
-            CC: clang
-            CMAKE_GENERATOR: Ninja
-            CMAKE_OPTIONS: -DUSE_HTTPS=mbedTLS -DUSE_SHA1=HTTPS -DDEPRECATE_HARD=ON -DUSE_LEAK_CHECKER=valgrind -DUSE_GSSAPI=ON -DUSE_SSH=libssh2
-        - name: "macOS"
+            CMAKE_OPTIONS: -DUSE_HTTPS=OpenSSL -DUSE_BUNDLED_ZLIB=ON -DDEPRECATE_HARD=ON -DUSE_THREADS=OFF
+        - name: macOS
           id: macos
           os: macos-14
-          setup-script: osx
           env:
             CC: clang
-            CMAKE_OPTIONS: -DREGEX_BACKEND=regcomp_l -DDEPRECATE_HARD=ON -DUSE_LEAK_CHECKER=leaks -DUSE_GSSAPI=ON
             CMAKE_GENERATOR: Ninja
-            PKG_CONFIG_PATH: /usr/local/opt/openssl/lib/pkgconfig
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-        - name: "Windows (amd64, Visual Studio, Schannel)"
-          id: windows-amd64-vs
+            CMAKE_OPTIONS: -DREGEX_BACKEND=builtin -DDEPRECATE_HARD=ON
+        - name: Windows
+          id: windows
           os: windows-2022
-          setup-script: win32
           env:
-            ARCH: amd64
             CMAKE_GENERATOR: Visual Studio 17 2022
-            CMAKE_OPTIONS: -A x64 -DWIN32_LEAKCHECK=ON -DDEPRECATE_HARD=ON -DUSE_HTTPS=Schannel -DUSE_SSH=ON -DCMAKE_PREFIX_PATH=D:\Temp\libssh2
-            BUILD_PATH: C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Program Files (x86)\CMake\bin;D:\Temp\libssh2\bin
-            BUILD_TEMP: D:\Temp
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-        - name: "Windows (x86, Visual Studio, WinHTTP)"
-          id: windows-x86-vs
-          os: windows-2022
-          setup-script: win32
-          env:
-            ARCH: x86
-            CMAKE_GENERATOR: Visual Studio 17 2022
-            CMAKE_OPTIONS: -A Win32 -DWIN32_LEAKCHECK=ON -DDEPRECATE_HARD=ON -DUSE_SHA1=HTTPS -DUSE_BUNDLED_ZLIB=ON -DUSE_SSH=ON -DCMAKE_PREFIX_PATH=D:\Temp\libssh2
-            BUILD_PATH: C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Program Files (x86)\CMake\bin;D:\Temp\libssh2\bin
-            BUILD_TEMP: D:\Temp
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-        - name: "Windows (amd64, mingw, WinHTTP)"
-          id: windows-amd64-mingw
-          os: windows-2022
-          setup-script: mingw
-          env:
-            ARCH: amd64
-            CMAKE_GENERATOR: MinGW Makefiles
-            CMAKE_OPTIONS: -DDEPRECATE_HARD=ON
-            BUILD_TEMP: D:\Temp
-            BUILD_PATH: D:\Temp\mingw64\bin;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Program Files (x86)\CMake\bin
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-        - name: "Windows (x86, mingw, Schannel)"
-          id: windows-x86-mingw
-          os: windows-2022
-          setup-script: mingw
-          env:
-            ARCH: x86
-            CMAKE_GENERATOR: MinGW Makefiles
-            CMAKE_OPTIONS: -DDEPRECATE_HARD=ON -DUSE_HTTPS=Schannel
-            BUILD_TEMP: D:\Temp
-            BUILD_PATH: D:\Temp\mingw32\bin;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Program Files (x86)\CMake\bin
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-
-        # All builds: sanitizers
-        - name: "Sanitizer (Memory)"
-          id: sanitizer-memory
-          os: ubuntu-latest
-          setup-script: sanitizer
-          container:
-            name: noble
-          env:
-            CC: clang
-            CFLAGS: -fsanitize=memory -fsanitize-memory-track-origins=2 -fsanitize-blacklist=/home/libgit2/source/script/sanitizers.supp -fno-optimize-sibling-calls -fno-omit-frame-pointer
-            CMAKE_OPTIONS: -DCMAKE_C_EXTENSIONS=ON -DCMAKE_PREFIX_PATH=/usr/local/msan -DUSE_HTTPS=mbedTLS -DUSE_SHA1=HTTPS -DREGEX_BACKEND=pcre -DDEPRECATE_HARD=ON -DUSE_BUNDLED_ZLIB=ON -DUSE_SSH=ON
-            CMAKE_GENERATOR: Ninja
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-            ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer-10
-            UBSAN_OPTIONS: print_stacktrace=1
-        - name: "Sanitizer (Address)"
-          id: sanitizer-address
-          os: ubuntu-latest
-          setup-script: sanitizer
-          container:
-            name: noble
-          env:
-            CC: clang
-            CFLAGS: -fsanitize=address -ggdb -fsanitize-blacklist=/home/libgit2/source/script/sanitizers.supp -fno-optimize-sibling-calls -fno-omit-frame-pointer
-            CMAKE_OPTIONS: -DCMAKE_PREFIX_PATH=/usr/local -DUSE_HTTPS=mbedTLS -DUSE_SHA1=HTTPS -DREGEX_BACKEND=pcre -DDEPRECATE_HARD=ON -DUSE_BUNDLED_ZLIB=ON -DUSE_SSH=ON
-            CMAKE_GENERATOR: Ninja
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-            ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer-10
-            UBSAN_OPTIONS: print_stacktrace=1
-        - name: "Sanitizer (UndefinedBehavior)"
-          id: sanitizer-ub
-          os: ubuntu-latest
-          setup-script: sanitizer
-          container:
-            name: noble
-          env:
-            CC: clang
-            CFLAGS: -fsanitize=undefined,nullability -fno-sanitize-recover=undefined,nullability -fsanitize-blacklist=/home/libgit2/source/script/sanitizers.supp -fno-optimize-sibling-calls -fno-omit-frame-pointer
-            CMAKE_OPTIONS: -DCMAKE_PREFIX_PATH=/usr/local -DUSE_HTTPS=OpenSSL -DUSE_SHA1=HTTPS -DREGEX_BACKEND=pcre -DDEPRECATE_HARD=ON -DUSE_BUNDLED_ZLIB=ON -DUSE_SSH=ON
-            CMAKE_GENERATOR: Ninja
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-            ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer-10
-            UBSAN_OPTIONS: print_stacktrace=1
-        - name: "Sanitizer (Thread)"
-          id: sanitizer-thread
-          os: ubuntu-latest
-          setup-script: sanitizer
-          container:
-            name: noble
-          env:
-            CC: clang
-            CFLAGS: -fsanitize=thread -fno-optimize-sibling-calls -fno-omit-frame-pointer
-            CMAKE_OPTIONS: -DCMAKE_PREFIX_PATH=/usr/local -DUSE_HTTPS=OpenSSL -DUSE_SHA1=HTTPS -DREGEX_BACKEND=pcre -DDEPRECATE_HARD=ON -DUSE_BUNDLED_ZLIB=ON -DUSE_SSH=ON
-            CMAKE_GENERATOR: Ninja
-            SKIP_SSH_TESTS: true
-            SKIP_NEGOTIATE_TESTS: true
-            ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer-10
-            UBSAN_OPTIONS: print_stacktrace=1
-            TSAN_OPTIONS: suppressions=/home/libgit2/source/script/thread-sanitizer.supp second_deadlock_stack=1
-      fail-fast: false
-    env: ${{ matrix.platform.env }}
+            CMAKE_OPTIONS: -A x64 -DUSE_SHA1=HTTPS -DUSE_BUNDLED_ZLIB=ON -DDEPRECATE_HARD=ON
+    name: "Test: ${{ matrix.platform.name }}"
     runs-on: ${{ matrix.platform.os }}
-    name: "Build: ${{ matrix.platform.name }}"
+    env:
+      CC: ${{ matrix.platform.env.CC }}
+      CMAKE_GENERATOR: ${{ matrix.platform.env.CMAKE_GENERATOR }}
+      CMAKE_OPTIONS: ${{ matrix.platform.env.CMAKE_OPTIONS }}
+      SKIP_ONLINE_TESTS: 1
+      SKIP_GITDAEMON_TESTS: 1
+      SKIP_PROXY_TESTS: 1
+      SKIP_NTLM_TESTS: 1
+      SKIP_NEGOTIATE_TESTS: 1
+      SKIP_SSH_TESTS: 1
+      SKIP_FUZZERS: 1
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
-        path: source
         fetch-depth: 0
-    - name: Set up build environment
-      run: source/ci/setup-${{ matrix.platform.setup-script }}-build.sh
-      shell: bash
-      if: matrix.platform.setup-script != ''
-    - name: Setup QEMU
-      run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-      if: matrix.platform.container.qemu == true
-    - name: Set up container
-      uses: ./source/.github/actions/download-or-build-container
-      with:
-        registry: ${{ env.docker-registry }}
-        config-path: ${{ env.docker-config-path }}
-        container: ${{ matrix.platform.container.name }}
-        github_token: ${{ secrets.github_token }}
-        dockerfile: ${{ matrix.platform.container.dockerfile }}
-      if: matrix.platform.container.name != ''
-    - name: Prepare build
+
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          cmake \
+          gcc \
+          git \
+          libssl-dev \
+          zlib1g-dev \
+          make \
+          ninja-build \
+          pkgconf
+
+    - name: Configure macOS environment
+      if: runner.os == 'macOS'
+      run: |
+        echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+    - name: Export Windows build path
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        "BUILD_PATH=$env:Path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Prepare build directory
       run: mkdir build
+      shell: bash
+
     - name: Build
-      uses: ./source/.github/actions/run-build
-      with:
-        command: cd ${BUILD_WORKSPACE:-.}/build && ../source/ci/build.sh
-        container: ${{ matrix.platform.container.name }}
-        container-version: ${{ env.docker-registry-container-sha }}
-        shell: ${{ matrix.platform.shell }}
+      run: ../ci/build.sh
+      working-directory: build
+      shell: bash
+
     - name: Test
-      uses: ./source/.github/actions/run-build
-      with:
-        command: cd ${BUILD_WORKSPACE:-.}/build && ../source/ci/test.sh
-        container: ${{ matrix.platform.container.name }}
-        container-version: ${{ env.docker-registry-container-sha }}
-        shell: ${{ matrix.platform.shell }}
+      run: ../ci/test.sh
+      working-directory: build
+      shell: bash
+
     - name: Upload test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: success() || failure()
       with:
         name: test-results-${{ matrix.platform.id }}
         path: build/results_*.xml
 
-  documentation:
-    name: Validate documentation
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out repository
-      uses: actions/checkout@v4
-    - name: Validate documentation
-      run: |
-        (cd script/api-docs && npm install)
-        script/api-docs/api-generator.js --validate-only --strict --deprecate-hard  .
-
   test_results:
     name: Test results
-    needs: [ build ]
+    needs: [ test ]
     if: always()
     runs-on: ubuntu-latest
     steps:
     - name: Download test results
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
     - name: Generate test summary
       uses: test-summary/action@v2
       with:

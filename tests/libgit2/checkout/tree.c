@@ -2,8 +2,14 @@
 #include "checkout_helpers.h"
 
 #include "git2/checkout.h"
+#include "git2/sys/alloc.h"
+#include "git2/sys/filter.h"
+#include "filter.h"
 #include "repository.h"
 #include "futils.h"
+#include "str.h"
+#include "thread.h"
+#include "util.h"
 
 static git_repository *g_repo;
 static git_checkout_options g_opts;
@@ -117,6 +123,189 @@ static void progress(const char *path, size_t cur, size_t tot, void *payload)
 	*was_called = true;
 }
 
+#ifdef GIT_THREADS
+typedef struct {
+	git_filter filter;
+	git_mutex mutex;
+	git_cond cond;
+	bool reported;
+} checkout_order_filter;
+
+typedef struct {
+	char paths[2][32];
+	size_t count;
+	checkout_order_filter *order;
+} checkout_progress_paths;
+
+static int delay_first_checkout(
+	git_filter *self, void **payload, git_str *to, const git_str *from,
+	const git_filter_source *source)
+{
+	checkout_order_filter *order = (checkout_order_filter *)self;
+
+	GIT_UNUSED(payload); GIT_UNUSED(to); GIT_UNUSED(from);
+
+	/* Force completion order to differ from the diff's path order. */
+	if (!strcmp(git_filter_source_path(source), "a-large.bin")) {
+		git_mutex_lock(&order->mutex);
+		while (!order->reported)
+			git_cond_wait(&order->cond, &order->mutex);
+		git_mutex_unlock(&order->mutex);
+	}
+
+	return GIT_PASSTHROUGH;
+}
+
+static int delay_first_checkout_stream(
+	git_writestream **out, git_filter *self, void **payload,
+	const git_filter_source *source, git_writestream *next)
+{
+	return git_filter_buffered_stream_new(out, self, delay_first_checkout,
+		NULL, payload, source, next);
+}
+
+typedef struct {
+	git_str target_path;
+	size_t target_len;
+	git_str tmp;
+} test_checkout_buffers;
+
+typedef struct {
+	int error;
+	size_t index;
+	bool skipped;
+} test_checkout_progress_pair;
+
+static git_allocator g_checkout_fail_stdalloc;
+static size_t g_checkout_fail_size, g_checkout_fail_ordinal, g_checkout_fail_match_count;
+static git_mutex g_checkout_fail_mutex;
+
+static void *checkout_fail_malloc(size_t n, const char *file, int line)
+{
+	int should_fail = 0;
+
+	git_mutex_lock(&g_checkout_fail_mutex);
+	if (n == g_checkout_fail_size &&
+		++g_checkout_fail_match_count == g_checkout_fail_ordinal)
+		should_fail = 1;
+	git_mutex_unlock(&g_checkout_fail_mutex);
+
+	if (should_fail)
+		return NULL;
+
+	return g_checkout_fail_stdalloc.gmalloc(n, file, line);
+}
+
+static void *checkout_fail_realloc(void *ptr, size_t n, const char *file, int line)
+{
+	int should_fail = 0;
+
+	git_mutex_lock(&g_checkout_fail_mutex);
+	if (n == g_checkout_fail_size &&
+		++g_checkout_fail_match_count == g_checkout_fail_ordinal)
+		should_fail = 1;
+	git_mutex_unlock(&g_checkout_fail_mutex);
+
+	if (should_fail)
+		return NULL;
+
+	return g_checkout_fail_stdalloc.grealloc(ptr, n, file, line);
+}
+
+static void checkout_fail_allocator_start(size_t fail_size, size_t fail_ordinal)
+{
+	git_allocator fail_alloc;
+
+	git_stdalloc_init_allocator(&g_checkout_fail_stdalloc);
+	git_stdalloc_init_allocator(&fail_alloc);
+
+	g_checkout_fail_size = fail_size;
+	g_checkout_fail_ordinal = fail_ordinal;
+	g_checkout_fail_match_count = 0;
+	cl_git_pass(git_mutex_init(&g_checkout_fail_mutex));
+
+	fail_alloc.gmalloc = checkout_fail_malloc;
+	fail_alloc.grealloc = checkout_fail_realloc;
+
+	cl_git_pass(git_allocator_setup(&fail_alloc));
+}
+
+static void checkout_fail_allocator_stop(void)
+{
+	g_checkout_fail_size = 0;
+	g_checkout_fail_ordinal = 0;
+	g_checkout_fail_match_count = 0;
+	cl_git_pass(git_allocator_setup(NULL));
+	git_mutex_free(&g_checkout_fail_mutex);
+}
+
+static void write_repeated_file(const char *path, size_t len, char fill)
+{
+	char *contents = malloc(len);
+
+	cl_assert(contents != NULL);
+	memset(contents, fill, len);
+	cl_git_write2file(path, contents, len, O_RDWR|O_CREAT|O_TRUNC, 0666);
+
+	free(contents);
+}
+
+static git_repository *create_parallel_checkout_repo(const char *name)
+{
+	git_repository *repo;
+	git_index *index;
+	git_str path = GIT_STR_INIT;
+
+	cl_git_pass(git_repository_init(&repo, name, 0));
+
+	cl_git_pass(git_str_joinpath(&path, name, "a-large.bin"));
+	write_repeated_file(path.ptr, 8 * 1024 * 1024, 'a');
+	cl_git_pass(git_str_sets(&path, name));
+	cl_git_pass(git_str_joinpath(&path, name, "z-small.txt"));
+	write_repeated_file(path.ptr, 32, 'z');
+	git_str_dispose(&path);
+
+	cl_git_pass(git_repository_index(&index, repo));
+	cl_git_pass(git_index_add_bypath(index, "a-large.bin"));
+	cl_git_pass(git_index_add_bypath(index, "z-small.txt"));
+	cl_git_pass(git_index_write(index));
+	cl_repo_commit_from_index(NULL, repo, NULL, 0, "parallel checkout commit");
+	git_index_free(index);
+
+	cl_git_pass(git_str_joinpath(&path, name, "a-large.bin"));
+	cl_git_pass(p_unlink(path.ptr));
+	cl_git_pass(git_str_sets(&path, name));
+	cl_git_pass(git_str_joinpath(&path, name, "z-small.txt"));
+	cl_git_pass(p_unlink(path.ptr));
+	git_str_dispose(&path);
+
+	return repo;
+}
+
+static void collect_parallel_progress(
+	const char *path,
+	size_t completed_steps,
+	size_t total_steps,
+	void *payload)
+{
+	checkout_progress_paths *progress = payload;
+
+	GIT_UNUSED(completed_steps);
+	GIT_UNUSED(total_steps);
+
+	if (!path || progress->count >= ARRAY_SIZE(progress->paths))
+		return;
+
+	git_mutex_lock(&progress->order->mutex);
+	progress->order->reported = true;
+	git_cond_signal(&progress->order->cond);
+	git_mutex_unlock(&progress->order->mutex);
+
+	p_snprintf(progress->paths[progress->count++], sizeof(progress->paths[0]), "%s", path);
+}
+
+#endif
+
 void test_checkout_tree__calls_progress_callback(void)
 {
 	bool was_called = 0;
@@ -129,6 +318,68 @@ void test_checkout_tree__calls_progress_callback(void)
 	cl_git_pass(git_checkout_tree(g_repo, g_object, &g_opts));
 
 	cl_assert_equal_i(was_called, true);
+}
+
+void test_checkout_tree__reports_parallel_progress_for_the_completed_delta(void)
+{
+#ifndef GIT_THREADS
+	clar__skip();
+#else
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	checkout_progress_paths progress = {0};
+	checkout_order_filter order = {GIT_FILTER_INIT};
+	git_repository *repo;
+
+	if (git__online_cpus() <= 1)
+		clar__skip();
+
+	repo = create_parallel_checkout_repo("parallel-progress");
+	cl_git_pass(git_mutex_init(&order.mutex));
+	cl_git_pass(git_cond_init(&order.cond));
+	order.filter.stream = delay_first_checkout_stream;
+	cl_git_pass(git_filter_register("checkout-order", &order.filter, 0));
+	progress.order = &order;
+
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+	opts.progress_cb = collect_parallel_progress;
+	opts.progress_payload = &progress;
+
+	cl_git_pass(git_checkout_head(repo, &opts));
+
+	cl_assert_equal_sz(2, progress.count);
+	cl_git_pass(git_filter_unregister("checkout-order"));
+	git_cond_free(&order.cond);
+	git_mutex_free(&order.mutex);
+	cl_assert_equal_s("z-small.txt", progress.paths[0]);
+	cl_assert_equal_s("a-large.bin", progress.paths[1]);
+
+	git_repository_free(repo);
+#endif
+}
+
+void test_checkout_tree__worker_setup_failure_does_not_hang(void)
+{
+#ifndef GIT_THREADS
+	clar__skip();
+#else
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_repository *repo;
+	int error;
+
+	if (git__online_cpus() <= 1)
+		clar__skip();
+
+	repo = create_parallel_checkout_repo("parallel-worker-failure");
+
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+
+	checkout_fail_allocator_start(sizeof(test_checkout_progress_pair), 1);
+	error = git_checkout_head(repo, &opts);
+	checkout_fail_allocator_stop();
+
+	cl_assert(error < 0);
+	git_repository_free(repo);
+#endif
 }
 
 void test_checkout_tree__doesnt_write_unrequested_files_to_worktree(void)

@@ -3,6 +3,49 @@
 #include "patch_parse.h"
 
 #include "patch_common.h"
+#include "git2/sys/alloc.h"
+
+static git_allocator g_patch_fail_stdalloc;
+static size_t g_patch_fail_ordinal, g_patch_fail_count;
+
+static void *patch_fail_malloc(size_t n, const char *file, int line)
+{
+	if (++g_patch_fail_count == g_patch_fail_ordinal)
+		return NULL;
+
+	return g_patch_fail_stdalloc.gmalloc(n, file, line);
+}
+
+static void *patch_fail_realloc(void *ptr, size_t n, const char *file, int line)
+{
+	if (++g_patch_fail_count == g_patch_fail_ordinal)
+		return NULL;
+
+	return g_patch_fail_stdalloc.grealloc(ptr, n, file, line);
+}
+
+static void patch_fail_allocator_start(size_t fail_ordinal)
+{
+	git_allocator fail_alloc;
+
+	git_stdalloc_init_allocator(&g_patch_fail_stdalloc);
+	git_stdalloc_init_allocator(&fail_alloc);
+
+	g_patch_fail_ordinal = fail_ordinal;
+	g_patch_fail_count = 0;
+
+	fail_alloc.gmalloc = patch_fail_malloc;
+	fail_alloc.grealloc = patch_fail_realloc;
+
+	cl_git_pass(git_allocator_setup(&fail_alloc));
+}
+
+static void patch_fail_allocator_stop(void)
+{
+	g_patch_fail_ordinal = 0;
+	g_patch_fail_count = 0;
+	cl_git_pass(git_allocator_setup(NULL));
+}
 
 static void ensure_patch_validity(git_patch *patch)
 {
@@ -184,6 +227,126 @@ void test_patch_parse__binary_file_path_without_body_paths(void)
 	git_patch *patch;
 	cl_git_fail(git_patch_from_buffer(&patch, PATCH_BINARY_FILE_PATH_WITHOUT_BODY_PATHS,
 					  strlen(PATCH_BINARY_FILE_PATH_WITHOUT_BODY_PATHS), NULL));
+}
+
+void test_patch_parse__binary_new_file_path_with_spaces(void)
+{
+	const char *content = PATCH_BINARY_NEW_FILE_PATH_WITH_SPACES;
+	git_patch *patch;
+
+	cl_git_pass(git_patch_from_buffer(&patch, content, strlen(content), NULL));
+
+	/*
+	 The file wasn't renamed, so we should be able to unambiguously parse the
+	 prefixed paths from the header's first line, since there should just be two
+	 equal paths there with different prefixes that fill the whole header line.
+	 */
+	cl_assert_equal_s(patch->diff_opts.old_prefix, "a/");
+	cl_assert_equal_s(patch->delta->old_file.path, "new image.png");
+	cl_assert_equal_s(patch->diff_opts.new_prefix, "b/");
+	cl_assert_equal_s(patch->delta->new_file.path, "new image.png");
+
+	git_patch_free(patch);
+}
+
+void test_patch_parse__binary_new_file_path_with_spaces_oom_does_not_succeed_with_null_paths(void)
+{
+	const char *content = PATCH_BINARY_NEW_FILE_PATH_WITH_SPACES;
+	size_t fail_ordinal;
+	bool saw_success = false;
+
+	for (fail_ordinal = 1; fail_ordinal < 512; ++fail_ordinal) {
+		git_patch *patch = NULL;
+		const git_diff_delta *delta;
+		int error;
+
+		patch_fail_allocator_start(fail_ordinal);
+		error = git_patch_from_buffer(&patch, content, strlen(content), NULL);
+		patch_fail_allocator_stop();
+
+		if (error < 0) {
+			git_patch_free(patch);
+			continue;
+		}
+
+		delta = git_patch_get_delta(patch);
+		cl_assert(delta != NULL);
+		cl_assert(delta->old_file.path != NULL);
+		cl_assert(delta->new_file.path != NULL);
+
+		git_patch_free(patch);
+		saw_success = true;
+	}
+
+	cl_assert(saw_success);
+}
+
+void test_patch_parse__binary_renamed_file_path_with_spaces(void)
+{
+	const char *content = PATCH_BINARY_RENAMED_FILE_PATH_WITH_SPACES;
+	git_patch *patch;
+
+	cl_git_pass(git_patch_from_buffer(&patch, content, strlen(content), NULL));
+
+	/*
+	 The file path changes, so we are unable to parse it prefixed from the
+	 header's first line because the pathnames are unquoted and it's impossible
+	 to unambiguously determine which one of those spaces is the separator
+	 between old and new.
+
+	 The file paths can be parsed from the "rename from/to" lines, but those
+	 are not prefixed.
+	 */
+	cl_assert_equal_p(patch->diff_opts.old_prefix, NULL);
+	cl_assert_equal_s(patch->delta->old_file.path, "some image.png");
+	cl_assert_equal_p(patch->diff_opts.new_prefix, NULL);
+	cl_assert_equal_s(patch->delta->new_file.path, "some image 2.png");
+
+	git_patch_free(patch);
+}
+
+void test_patch_parse__binary_modified_file_path_with_spaces(void)
+{
+	const char *content = PATCH_BINARY_MODIFIED_FILE_PATH_WITH_SPACES;
+	git_patch *patch;
+
+	cl_git_pass(git_patch_from_buffer(&patch, content, strlen(content), NULL));
+
+	/*
+	 The file wasn't renamed, so we should be able to unambiguously parse the
+	 prefixed paths from the header's first line, since there should just be two
+	 equal paths there with different prefixes that fill the whole header line.
+	 */
+	cl_assert_equal_s(patch->diff_opts.old_prefix, "a/");
+	cl_assert_equal_s(patch->delta->old_file.path, "some image.png");
+	cl_assert_equal_s(patch->diff_opts.new_prefix, "b/");
+	cl_assert_equal_s(patch->delta->new_file.path, "some image.png");
+
+	git_patch_free(patch);
+}
+
+void test_patch_parse__binary_renamed_and_modified_file_path_with_spaces(void)
+{
+	const char *content = PATCH_BINARY_RENAMED_AND_MODIFIED_FILE_PATH_WITH_SPACES;
+	git_patch *patch;
+
+	cl_git_pass(git_patch_from_buffer(&patch, content, strlen(content), NULL));
+
+	/*
+	 The file path changes, so we are unable to parse it prefixed from the
+	 header's first line because the pathnames are unquoted and it's impossible
+	 to unambiguously determine which one of those spaces is the separator
+	 between old and new.
+
+	 The file paths can be parsed from the "rename from/to" lines, but those
+	 are not prefixed.
+	 */
+	cl_assert_equal_p(patch->diff_opts.old_prefix, NULL);
+	cl_assert_equal_s(patch->delta->old_file.path, "some image.png");
+	cl_assert_equal_p(patch->diff_opts.new_prefix, NULL);
+	cl_assert_equal_s(patch->delta->new_file.path, "some image 2.png");
+
+	git_patch_free(patch);
 }
 
 void test_patch_parse__binary_file_with_truncated_delta(void)

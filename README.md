@@ -1,13 +1,18 @@
 libgit2 - the Git linkable library
 ==================================
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/9609/badge)](https://www.bestpractices.dev/projects/9609)
 
 | Build Status | |
 | ------------ | - |
-| **main** branch builds | [![CI Build](https://github.com/libgit2/libgit2/actions/workflows/main.yml/badge.svg?branch=main&event=push)](https://github.com/libgit2/libgit2/actions/workflows/main.yml?query=event%3Apush+branch%3Amain) [![Experimental Features](https://github.com/libgit2/libgit2/actions/workflows/experimental.yml/badge.svg?branch=main)](https://github.com/libgit2/libgit2/actions/workflows/experimental.yml?query=event%3Apush+branch%3Amain) |
-| **v1.9 branch** builds | [![CI Build](https://github.com/libgit2/libgit2/actions/workflows/main.yml/badge.svg?branch=maint%2Fv1.9&event=push)](https://github.com/libgit2/libgit2/actions/workflows/main.yml?query=event%3Apush+branch%3Amaint%2Fv1.9) [![Experimental Features](https://github.com/libgit2/libgit2/actions/workflows/experimental.yml/badge.svg?branch=maint%2Fv1.9)](https://github.com/libgit2/libgit2/actions/workflows/experimental.yml?query=event%3Apush+branch%3Amaint%2Fv1.9) |
-| **v1.8 branch** builds | [![CI Build](https://github.com/libgit2/libgit2/actions/workflows/main.yml/badge.svg?branch=maint%2Fv1.8&event=push)](https://github.com/libgit2/libgit2/actions/workflows/main.yml?query=event%3Apush+branch%3Amaint%2Fv1.8) [![Experimental Features](https://github.com/libgit2/libgit2/actions/workflows/experimental.yml/badge.svg?branch=maint%2Fv1.8)](https://github.com/libgit2/libgit2/actions/workflows/experimental.yml?query=event%3Apush+branch%3Amaint%2Fv1.8) |
-| **Nightly** builds | [![Nightly Build](https://github.com/libgit2/libgit2/actions/workflows/nightly.yml/badge.svg?branch=main&event=schedule)](https://github.com/libgit2/libgit2/actions/workflows/nightly.yml) [![Coverity Scan Status](https://scan.coverity.com/projects/639/badge.svg)](https://scan.coverity.com/projects/639) |
+| **jabali/1.9** branch builds | [![CI Tests](https://github.com/Jaabaali/libgit2/actions/workflows/main.yml/badge.svg?branch=jabali%2F1.9)](https://github.com/Jaabaali/libgit2/actions/workflows/main.yml?query=branch%3Ajabali%2F1.9) |
+
+This repository is a minimal fork of `libgit2` maintained for
+[Jaabaali/nodegit](https://github.com/Jaabaali/nodegit). It tracks upstream
+`libgit2` releases and carries only the fork-specific patches needed by that
+consumer.
+
+The supported stable line is `jabali/1.9`, based on upstream **v1.9.7**.
+`main` tracks upstream development. See [fork maintenance](docs/jabali-maintenance.md)
+for the patch inventory, validation commands, and update procedure.
 
 `libgit2` is a portable, pure C implementation of the Git core methods
 provided as a linkable library with a solid API, allowing to build Git
@@ -119,11 +124,14 @@ questions, reach out to us on Slack or post a question on
 
 **Reporting Bugs**
 
-Please open a [GitHub Issue](https://github.com/libgit2/libgit2/issues)
-and include as much information as possible.  If possible, provide
-sample code that illustrates the problem you're seeing.  If you're
-seeing a bug only on a specific repository, please provide a link to
-it if possible.
+For upstream `libgit2` bugs, please open a
+[GitHub Issue](https://github.com/libgit2/libgit2/issues) and include as much
+information as possible. If possible, provide sample code that illustrates the
+problem you're seeing.
+
+For issues specific to this fork or its use in
+[Jaabaali/nodegit](https://github.com/Jaabaali/nodegit), open an issue in the
+relevant fork or consumer repository and include the same reproduction details.
 
 We ask that you not open a GitHub Issue for help, only for bug reports.
 
@@ -551,12 +559,11 @@ we can add it to the list.
 How Can I Contribute?
 ==================================
 
-We welcome new contributors!  We have a number of issues marked as
-["up for grabs"](https://github.com/libgit2/libgit2/issues?q=is%3Aissue+is%3Aopen+label%3A%22up+for+grabs%22)
-and
-["easy fix"](https://github.com/libgit2/libgit2/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3A%22easy+fix%22)
-that are good places to jump in and get started.  There's much more detailed
-information in our list of [outstanding projects](docs/projects.md).
+This fork intentionally stays small. Prefer contributing general-purpose
+`libgit2` changes to [libgit2/libgit2](https://github.com/libgit2/libgit2).
+Changes here should be limited to upstream version bumps and the minimal
+fork-specific patches required by
+[Jaabaali/nodegit](https://github.com/Jaabaali/nodegit).
 
 Please be sure to check the [contribution guidelines](docs/contributing.md)
 to understand our workflow, and the libgit2
