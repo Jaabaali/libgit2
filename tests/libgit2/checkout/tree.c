@@ -326,7 +326,7 @@ void test_checkout_tree__reports_parallel_progress_for_the_completed_delta(void)
 	clar__skip();
 #else
 	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
-	checkout_progress_paths progress = {{0}};
+	checkout_progress_paths progress = {0};
 	checkout_order_filter order = {GIT_FILTER_INIT};
 	git_repository *repo;
 
