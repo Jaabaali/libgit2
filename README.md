@@ -3,12 +3,16 @@ libgit2 - the Git linkable library
 
 | Build Status | |
 | ------------ | - |
-| **main** branch builds | [![CI Tests](https://github.com/Jaabaali/libgit2/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/Jaabaali/libgit2/actions/workflows/main.yml?query=branch%3Amain) |
+| **jabali/1.9** branch builds | [![CI Tests](https://github.com/Jaabaali/libgit2/actions/workflows/main.yml/badge.svg?branch=jabali%2F1.9)](https://github.com/Jaabaali/libgit2/actions/workflows/main.yml?query=branch%3Ajabali%2F1.9) |
 
 This repository is a minimal fork of `libgit2` maintained for
 [Jaabaali/nodegit](https://github.com/Jaabaali/nodegit). It tracks upstream
 `libgit2` releases and carries only the fork-specific patches needed by that
 consumer.
+
+The supported stable line is `jabali/1.9`, based on upstream **v1.9.7**.
+`main` tracks upstream development. See [fork maintenance](docs/jabali-maintenance.md)
+for the patch inventory, validation commands, and update procedure.
 
 `libgit2` is a portable, pure C implementation of the Git core methods
 provided as a linkable library with a solid API, allowing to build Git

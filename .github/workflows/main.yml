@@ -2,7 +2,7 @@ name: CI Tests
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "jabali/**" ]
   pull_request:
   workflow_dispatch:
 
@@ -22,6 +22,13 @@ jobs:
             CC: gcc
             CMAKE_GENERATOR: Ninja
             CMAKE_OPTIONS: -DUSE_HTTPS=OpenSSL -DUSE_BUNDLED_ZLIB=ON -DDEPRECATE_HARD=ON
+        - name: Linux (no threads)
+          id: linux-no-threads
+          os: ubuntu-latest
+          env:
+            CC: gcc
+            CMAKE_GENERATOR: Ninja
+            CMAKE_OPTIONS: -DUSE_HTTPS=OpenSSL -DUSE_BUNDLED_ZLIB=ON -DDEPRECATE_HARD=ON -DUSE_THREADS=OFF
         - name: macOS
           id: macos
           os: macos-14
