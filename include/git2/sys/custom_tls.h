@@ -39,6 +39,11 @@ typedef void GIT_CALLBACK(git_teardown_tls_on_internal_thread_cb)(void);
  * thread. All three callbacks must be supplied together, or all must be NULL
  * to disable custom thread local storage. A partial set returns an error
  * without changing the registered callbacks.
+ * Each new thread uses a snapshot of all three callbacks. Retrieval runs
+ * outside the registration lock and may replace or disable callbacks for
+ * subsequent threads without changing the current thread's snapshot.
+ * Previously registered callbacks must remain callable until threads using
+ * their snapshots have finished.
  *
  * @param  retrieve_storage_for_internal_thread Used to retrieve a pointer on
  *                                              a thread before spawning child

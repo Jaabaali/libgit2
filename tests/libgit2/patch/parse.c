@@ -273,6 +273,8 @@ void test_patch_parse__binary_new_file_path_with_spaces_oom_does_not_succeed_wit
 		cl_assert(delta != NULL);
 		cl_assert(delta->old_file.path != NULL);
 		cl_assert(delta->new_file.path != NULL);
+		cl_assert_equal_s("a/", patch->diff_opts.old_prefix);
+		cl_assert_equal_s("b/", patch->diff_opts.new_prefix);
 
 		git_patch_free(patch);
 		saw_success = true;

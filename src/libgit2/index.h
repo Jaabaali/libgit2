@@ -86,8 +86,6 @@ GIT_INLINE(bool) git_index_time_eq(const git_index_time *one, const git_index_ti
 		return false;
 
 #ifdef GIT_USE_NSEC
-	if (one->nanoseconds == 0 || two->nanoseconds == 0)
-		return true;
 	if (one->nanoseconds != two->nanoseconds)
 		return false;
 #endif

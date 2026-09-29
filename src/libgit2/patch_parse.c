@@ -1322,6 +1322,7 @@ static int check_prefix(
 	if (res >= 0) {
 		*out_len = prefix_len;
 		*out = git__strndup(path_start, prefix_len);
+		GIT_ERROR_CHECK_ALLOC(*out);
 	}
 
 	return res;

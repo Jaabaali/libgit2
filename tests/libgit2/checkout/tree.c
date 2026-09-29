@@ -239,6 +239,56 @@ static void checkout_fail_allocator_stop(void)
 	git_mutex_free(&g_checkout_fail_mutex);
 }
 
+/* Only installed at the progress baseline, before any workers are created. */
+static void *g_setup_allocations[4];
+static size_t g_setup_ordinal, g_setup_count;
+
+static void *setup_fail_realloc(void *ptr, size_t n, const char *file, int line)
+{
+	void *result;
+	size_t ordinal = ++g_setup_count;
+
+	if (ordinal == g_setup_ordinal)
+		return NULL;
+
+	result = g_checkout_fail_stdalloc.grealloc(ptr, n, file, line);
+	if (ordinal < g_setup_ordinal)
+		g_setup_allocations[ordinal - 1] = result;
+	return result;
+}
+
+static void *setup_fail_malloc(size_t n, const char *file, int line)
+{
+	return setup_fail_realloc(NULL, n, file, line);
+}
+
+static void setup_fail_free(void *ptr)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(g_setup_allocations); ++i) {
+		if (g_setup_allocations[i] == ptr)
+			g_setup_allocations[i] = NULL;
+	}
+	g_checkout_fail_stdalloc.gfree(ptr);
+}
+
+static void fail_parallel_setup(const char *path, size_t current, size_t total, void *payload)
+{
+	git_allocator allocator;
+
+	GIT_UNUSED(current); GIT_UNUSED(total); GIT_UNUSED(payload);
+	if (path)
+		return;
+
+	git_stdalloc_init_allocator(&g_checkout_fail_stdalloc);
+	git_stdalloc_init_allocator(&allocator);
+	allocator.gmalloc = setup_fail_malloc;
+	allocator.grealloc = setup_fail_realloc;
+	allocator.gfree = setup_fail_free;
+	cl_git_pass(git_allocator_setup(&allocator));
+}
+
 static void write_repeated_file(const char *path, size_t len, char fill)
 {
 	char *contents = malloc(len);
@@ -378,6 +428,38 @@ void test_checkout_tree__worker_setup_failure_does_not_hang(void)
 	checkout_fail_allocator_stop();
 
 	cl_assert(error < 0);
+	git_repository_free(repo);
+#endif
+}
+
+void test_checkout_tree__parallel_setup_allocation_failure_frees_prior_allocations(void)
+{
+#ifndef GIT_THREADS
+	clar__skip();
+#else
+	git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
+	git_repository *repo;
+	size_t i;
+	int error;
+
+	if (git__online_cpus() <= 1)
+		clar__skip();
+
+	repo = create_parallel_checkout_repo("parallel-setup-failure");
+	opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+	opts.progress_cb = fail_parallel_setup;
+
+	/* The three result vectors and worker array precede thread creation. */
+	for (g_setup_ordinal = 1; g_setup_ordinal <= 4; ++g_setup_ordinal) {
+		g_setup_count = 0;
+		memset(g_setup_allocations, 0, sizeof(g_setup_allocations));
+		error = git_checkout_head(repo, &opts);
+		cl_git_pass(git_allocator_setup(NULL));
+		cl_assert(error < 0);
+		cl_assert(g_setup_count >= g_setup_ordinal);
+		for (i = 0; i < ARRAY_SIZE(g_setup_allocations); ++i)
+			cl_assert_equal_p(NULL, g_setup_allocations[i]);
+	}
 	git_repository_free(repo);
 #endif
 }

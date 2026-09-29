@@ -48,6 +48,37 @@ void test_index_racy__diff(void)
 	git_str_dispose(&path);
 }
 
+void test_index_racy__zero_nanoseconds_does_not_hide_content_changes(void)
+{
+#ifndef GIT_USE_NSEC
+	clar__skip();
+#else
+	git_index *index;
+	git_index_entry *entry;
+	git_diff *diff;
+	struct stat st;
+	struct p_timeval times[2] = {{1234567890, 0}, {1234567890, 0}};
+
+	cl_git_mkfile("diff_racy/A", "A");
+	cl_git_pass(git_repository_index(&index, g_repo));
+	cl_git_pass(git_index_add_bypath(index, "A"));
+	cl_git_pass(git_index_write(index));
+	cl_git_mkfile("diff_racy/A", "B");
+	cl_git_pass(p_utimes("diff_racy/A", times));
+	cl_git_pass(p_stat("diff_racy/A", &st));
+	cl_assert(entry = (git_index_entry *)git_index_get_bypath(index, "A", 0));
+
+	/* Isolate mtime: all other stat fields match, and the index is newer. */
+	git_index_entry__init_from_stat(entry, &st, true);
+	entry->mtime.nanoseconds = 500000000;
+	entry->flags_extended &= ~GIT_INDEX_ENTRY_UPTODATE;
+	cl_git_pass(git_diff_index_to_workdir(&diff, g_repo, index, NULL));
+	cl_assert_equal_i(1, git_diff_num_deltas(diff));
+	git_diff_free(diff);
+	git_index_free(index);
+#endif
+}
+
 void test_index_racy__write_index_just_after_file(void)
 {
 	git_index *index;

@@ -2111,29 +2111,48 @@ static int checkout_create_the_new__parallel(
 	unsigned int *actions,
 	checkout_data *data)
 {
-	thread_params *p;
+	thread_params *p = NULL;
 	size_t i, num_threads = git__online_cpus(), last_index = 0, current_index = 0,
-		num_deltas = git_vector_length(&data->diff->deltas);
-	int ret;
+		num_deltas = git_vector_length(&data->diff->deltas), num_started = 0;
+	int ret = 0;
 	checkout_progress_pair *progress_pair;
 	git_atomic32 delta_index, error;
 	git_diff_delta *delta;
-	git_vector errored_pairs, progress_pairs, temp;
+	git_vector errored_pairs = GIT_VECTOR_INIT, progress_pairs = GIT_VECTOR_INIT,
+		temp = GIT_VECTOR_INIT;
 	git_cond cond;
 	git_mutex mutex;
+	bool cond_initialized = false, mutex_initialized = false;
 
 	if (
 			(ret = git_vector_init(&progress_pairs, num_deltas, NULL)) < 0 ||
 			(ret = git_vector_init(&errored_pairs, num_deltas, NULL)) < 0 ||
 			(ret = git_vector_init(&temp, num_deltas, NULL)) < 0)
-		return ret;
+		goto cleanup;
 
 	p = git__mallocarray(num_threads, sizeof(*p));
-	GIT_ERROR_CHECK_ALLOC(p);
+	if (!p) {
+		ret = -1;
+		goto cleanup;
+	}
 
-	git_cond_init(&cond);
-	git_mutex_init(&mutex);
-	git_mutex_lock(&mutex);
+	if (git_cond_init(&cond) != 0) {
+		git_error_set(GIT_ERROR_THREAD, "unable to initialize checkout condition variable");
+		ret = -1;
+		goto cleanup;
+	}
+	cond_initialized = true;
+	if (git_mutex_init(&mutex) != 0) {
+		git_error_set(GIT_ERROR_THREAD, "unable to initialize checkout mutex");
+		ret = -1;
+		goto cleanup;
+	}
+	mutex_initialized = true;
+	if (git_mutex_lock(&mutex) != 0) {
+		git_error_set(GIT_ERROR_THREAD, "unable to lock checkout mutex");
+		ret = -1;
+		goto cleanup;
+	}
 
 	git_atomic32_set(&delta_index, -1);
 	git_atomic32_set(&error, 0);
@@ -2159,11 +2178,10 @@ static int checkout_create_the_new__parallel(
 			git_atomic32_set(&error, -1);
 			git_error_set(GIT_ERROR_THREAD, "unable to create thread");
 			git_mutex_unlock(&mutex);
-			/* Only clean up the number of threads we have started */
-			num_threads = i;
 			ret = -1;
 			goto cleanup;
 		}
+		num_started++;
 	}
 
 	while (last_index < num_deltas) {
@@ -2230,7 +2248,7 @@ static int checkout_create_the_new__parallel(
 	}
 
 cleanup:
-	for (i = 0; i < num_threads; ++i) {
+	for (i = 0; i < num_started; ++i) {
 		git_thread_join(&p[i].thread, NULL);
 	}
 
@@ -2238,8 +2256,10 @@ cleanup:
 	git_vector_dispose(&errored_pairs);
 	git_vector_dispose(&temp);
 	git_vector_dispose_deep(&progress_pairs);
-	git_cond_free(&cond);
-	git_mutex_free(&mutex);
+	if (cond_initialized)
+		git_cond_free(&cond);
+	if (mutex_initialized)
+		git_mutex_free(&mutex);
 
 	return ret;
 }

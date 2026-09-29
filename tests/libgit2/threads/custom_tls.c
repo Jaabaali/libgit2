@@ -103,7 +103,34 @@ static void *return_normally(void *param)
 {
   return param;
 }
+
+static void *retrieve_and_unregister(void)
+{
+	cl_git_pass(git_custom_tls_set_callbacks(NULL, NULL, NULL));
+	return init_local_storage();
+}
 #endif
+
+void test_threads_custom_tls__retrieve_can_unregister_without_changing_snapshot(void)
+{
+#ifndef GIT_THREADS
+	clar__skip();
+#else
+	git_thread thread;
+	void *result;
+
+	cl_git_pass(git_custom_tls_set_callbacks(retrieve_and_unregister, init_tls, teardown_tls));
+	cl_git_pass(git_thread_create(&thread, return_normally, (void *)42));
+	cl_git_pass(git_thread_join(&thread, &result));
+	cl_assert_equal_sz(42, (size_t)result);
+	cl_assert_equal_i(2, *test[0]);
+
+	/* The first thread retains its snapshot; subsequent threads see the reset. */
+	cl_git_pass(git_thread_create(&thread, return_normally, NULL));
+	cl_git_pass(git_thread_join(&thread, NULL));
+	cl_assert_equal_i(1, num_threads_spawned);
+#endif
+}
 
 void test_threads_custom_tls__multiple_clean_exit(void)
 {

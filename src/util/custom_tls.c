@@ -97,6 +97,8 @@ int git_custom_tls_set_callbacks(
 
 int git_custom_tls__init(git_custom_tls *tls)
 {
+	git_retrieve_tls_for_internal_thread_cb retrieve;
+
 	if (git_rwlock_rdlock(&git__custom_tls.lock) < 0) {
 		git_error_set(GIT_ERROR_OS, "failed to lock custom thread local storage");
 		return -1;
@@ -110,18 +112,14 @@ int git_custom_tls__init(git_custom_tls *tls)
 		return -1;
 	}
 
-	if (!git__custom_tls.retrieve_storage_for_internal_thread) {
-		tls->set_storage_on_thread = NULL;
-		tls->teardown_storage_on_thread = NULL;
-		tls->payload = NULL;
-	} else {
-		/* Keep a per-thread snapshot of the callbacks in use. */
-		tls->set_storage_on_thread = git__custom_tls.set_storage_on_thread;
-		tls->teardown_storage_on_thread = git__custom_tls.teardown_storage_on_thread;
-		tls->payload = git__custom_tls.retrieve_storage_for_internal_thread();
-	}
-
+	/* Snapshot the complete callback set before invoking application code. */
+	retrieve = git__custom_tls.retrieve_storage_for_internal_thread;
+	tls->set_storage_on_thread = git__custom_tls.set_storage_on_thread;
+	tls->teardown_storage_on_thread = git__custom_tls.teardown_storage_on_thread;
 	git_rwlock_rdunlock(&git__custom_tls.lock);
+
+	/* Retrieval may register a new callback set or create another thread. */
+	tls->payload = retrieve ? retrieve() : NULL;
 	return 0;
 }
 
