@@ -111,6 +111,8 @@ GIT_INLINE(bool) git_index_entry_newer_than_index(
 		return true;
 	else if ((int32_t)index->stamp.mtime.tv_sec > entry->mtime.seconds)
 		return false;
+	else if (entry->mtime.nanoseconds == 0 || index->stamp.mtime.tv_nsec == 0)
+		return true;
 	else
 		return (uint32_t)index->stamp.mtime.tv_nsec <= entry->mtime.nanoseconds;
 #else

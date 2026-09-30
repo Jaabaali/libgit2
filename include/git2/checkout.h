@@ -388,6 +388,9 @@ typedef struct git_checkout_options {
 
 	/** Payload passed to perfdata_cb */
 	void *perfdata_payload;
+
+	/** Names of filters to skip during checkout (NodeGit extension). */
+	git_strarray disabled_filters;
 } git_checkout_options;
 
 
